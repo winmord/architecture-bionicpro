@@ -23,3 +23,6 @@
 [bionicpro-reports](bionicpro-reports)
 ### Задача 5. Добавьте в UI кнопку получения отчёта и вызова эндпоинта его генерации.
 [UI](frontend/src/components/ReportPage.tsx)
+
+# Задание 3
+[bionicpro-reports](bionicpro-reports)

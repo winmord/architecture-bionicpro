@@ -3,20 +3,11 @@ import { useKeycloak } from '@react-keycloak/web';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
-interface ReportData {
-  email: string;
-  name: string;
-  sessions: number;
-  gestures: number;
-  accuracy: number;
-  battery: number;
-}
-
 const ReportPage: React.FC = () => {
   const { keycloak, initialized } = useKeycloak();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<ReportData | null>(null);
+  const [reportUrl, setReportUrl] = useState<string | null>(null);
 
   const getReport = async () => {
     if (!keycloak?.token) {
@@ -33,6 +24,7 @@ const ReportPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      setReportUrl(null);
 
       const response = await fetch(`${API_URL}/reports/${email}`, {
         headers: {
@@ -41,28 +33,23 @@ const ReportPage: React.FC = () => {
       });
 
       if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error('Access denied');
-        }
-        if (response.status === 404) {
-          throw new Error('Report not found');
-        }
         throw new Error(`Error: ${response.status}`);
       }
 
       const data = await response.json();
-      setReport(data);
+
+      if (data.report_url) {
+        setReportUrl(data.report_url);
+      } else {
+        // Нет данных
+        setReportUrl(null);
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
-  };
-
-  const downloadCSV = async () => {
-    if (!keycloak?.token) return;
-    window.location.href = `${API_URL}/reports/me/csv`;
   };
 
   if (!initialized) {
@@ -84,7 +71,7 @@ const ReportPage: React.FC = () => {
         <div style={{ padding: '20px', border: '1px solid #ccc', borderRadius: '8px', minWidth: '400px' }}>
           <h1>Usage Reports</h1>
 
-          <div style={{ margin: '20px 0', display: 'flex', gap: '10px' }}>
+          <div style={{ margin: '20px 0' }}>
             <button
                 onClick={getReport}
                 disabled={loading}
@@ -92,12 +79,6 @@ const ReportPage: React.FC = () => {
             >
               {loading ? 'Loading...' : 'Get Report'}
             </button>
-
-            {report && (
-                <button onClick={downloadCSV} style={{ padding: '8px 16px' }}>
-                  Download CSV
-                </button>
-            )}
           </div>
 
           {error && (
@@ -106,37 +87,12 @@ const ReportPage: React.FC = () => {
               </div>
           )}
 
-          {report && (
+          {reportUrl && (
               <div style={{ marginTop: '20px' }}>
-                <h2>Statistics</h2>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <tbody>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Email:</td>
-                    <td style={{ padding: '8px' }}>{report.email}</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Name:</td>
-                    <td style={{ padding: '8px' }}>{report.name || '-'}</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Total sessions:</td>
-                    <td style={{ padding: '8px' }}>{report.sessions}</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Total gestures:</td>
-                    <td style={{ padding: '8px' }}>{report.gestures}</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Avg accuracy:</td>
-                    <td style={{ padding: '8px' }}>{report.accuracy}%</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Avg battery:</td>
-                    <td style={{ padding: '8px' }}>{report.battery}%</td>
-                  </tr>
-                  </tbody>
-                </table>
+                <p>Report ready:</p>
+                <a href={reportUrl} target="_blank" rel="noopener noreferrer">
+                  Download CSV
+                </a>
               </div>
           )}
         </div>
