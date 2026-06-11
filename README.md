@@ -9,3 +9,5 @@
 [ldap](ldap)
 ## Задача 5. Настройте MFA.
 [realm-export](keycloak/realm-export.json)
+## Задача 6. Добавьте OAuth 2.0 от Яндекс ID.
+[realm-export](keycloak/realm-export.json)

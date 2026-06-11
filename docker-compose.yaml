@@ -39,6 +39,8 @@ services:
       KC_DB_PASSWORD: keycloak_password
       KC_HOSTNAME: localhost
       KC_FEATURES: "token-exchange,admin-fine-grained-authz,authorization"
+      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID}
+      YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET}
     command:
       - start-dev
       - --import-realm
@@ -50,6 +52,7 @@ services:
     depends_on:
       - keycloak_db
       - openldap
+
   bionicpro-auth:
     build:
       context: ./bionicpro-auth
@@ -74,5 +77,8 @@ services:
     environment:
       REACT_APP_API_URL: http://localhost:8000
       REACT_APP_AUTH_URL: http://localhost:8081
+      REACT_APP_KEYCLOAK_URL: http://localhost:8080
+      REACT_APP_KEYCLOAK_REALM: reports-realm
+      REACT_APP_KEYCLOAK_CLIENT_ID: reports-frontend
     depends_on:
       - bionicpro-auth
