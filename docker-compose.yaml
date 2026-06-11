@@ -181,10 +181,6 @@ services:
       dockerfile: Dockerfile
     environment:
       CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: 8123
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
-      CLICKHOUSE_DATABASE: bionicpro
     ports:
       - "8000:8000"
     depends_on:

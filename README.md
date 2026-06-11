@@ -19,3 +19,7 @@
 [airflow](airflow)
 ### Задача 3. Создайте бэкенд-часть приложения для API.
 [bionicpro-reports](bionicpro-reports)
+### Задача 4. Реализуйте ограничение доступа к эндпоинту отчётности.
+[bionicpro-reports](bionicpro-reports)
+### Задача 5. Добавьте в UI кнопку получения отчёта и вызова эндпоинта его генерации.
+[UI](frontend/src/components/ReportPage.tsx)

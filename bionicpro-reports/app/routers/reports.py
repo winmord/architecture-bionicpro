@@ -1,161 +1,116 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from fastapi import APIRouter, HTTPException, Request
 import clickhouse_connect
-
-from app.database import get_clickhouse_client
-from app.models import ReportResponse, ErrorResponse
+import base64
+import json
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.get("/{user_email}", response_model=ReportResponse)
-async def get_report(
-    user_email: str,
-    db: clickhouse_connect.client.Client = Depends(get_clickhouse_client)
-):
-    query = """
+def get_user_email_from_token(request: Request):
+    try:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return None
+
+        token = auth_header.replace("Bearer ", "")
+
+        # Декодируем JWT payload
+        payload = token.split('.')[1]
+        payload += '=' * (4 - len(payload) % 4)
+        decoded = base64.b64decode(payload)
+        data = json.loads(decoded)
+
+        return data.get("email")
+    except Exception:
+        return None
+
+
+@router.get("/{user_email}")
+async def get_report(user_email: str, request: Request):
+    current_email = get_user_email_from_token(request)
+
+    if not current_email:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if current_email.lower() != user_email.lower():
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        client = clickhouse_connect.get_client(
+            host="clickhouse",
+            port=8123,
+            database="bionicpro"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    result = client.query("""
         SELECT
             user_email,
             user_name,
             total_sessions,
             total_gestures,
             avg_confidence,
-            avg_battery,
-            first_activity,
-            last_activity,
-            updated_at
+            avg_battery
         FROM reports_datamart
         WHERE user_email = %(email)s
-        LIMIT 1
-    """
+    """, parameters={"email": user_email})
 
-    try:
-        result = db.query(query, parameters={"email": user_email})
+    if not result.result_rows:
+        return {
+            "email": user_email,
+            "name": "-",
+            "sessions": 0,
+            "gestures": 0,
+            "accuracy": 0,
+            "battery": 0
+        }
 
-        if not result.result_rows:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Отчёт для пользователя {user_email} не найден"
-            )
-
-        row = result.result_rows[0]
-        return ReportResponse(
-            user_email=row[0],
-            user_name=row[1],
-            total_sessions=row[2],
-            total_gestures=row[3],
-            avg_confidence=row[4],
-            avg_battery=row[5],
-            first_activity=row[6],
-            last_activity=row[7],
-            updated_at=row[8]
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    row = result.result_rows[0]
+    return {
+        "email": row[0],
+        "name": row[1] or "-",
+        "sessions": row[2],
+        "gestures": row[3],
+        "accuracy": round(row[4], 1),
+        "battery": round(row[5], 1)
+    }
 
 
-@router.get("/", response_model=List[ReportResponse])
-async def get_all_reports(
-    limit: int = 100,
-    db: clickhouse_connect.client.Client = Depends(get_clickhouse_client)
-):
-    query = """
-        SELECT
-            user_email,
-            user_name,
-            total_sessions,
-            total_gestures,
-            avg_confidence,
-            avg_battery,
-            first_activity,
-            last_activity,
-            updated_at
-        FROM reports_datamart
-        LIMIT %(limit)s
-    """
-
-    try:
-        result = db.query(query, parameters={"limit": limit})
-
-        reports = []
-        for row in result.result_rows:
-            reports.append(ReportResponse(
-                user_email=row[0],
-                user_name=row[1],
-                total_sessions=row[2],
-                total_gestures=row[3],
-                avg_confidence=row[4],
-                avg_battery=row[5],
-                first_activity=row[6],
-                last_activity=row[7],
-                updated_at=row[8]
-            ))
-
-        return reports
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{user_email}/csv")
-async def get_report_csv(
-    user_email: str,
-    db: clickhouse_connect.client.Client = Depends(get_clickhouse_client)
-):
+@router.get("/me/csv")
+async def download_csv(request: Request):
     from fastapi.responses import Response
     import csv
     from io import StringIO
 
-    query = """
+    current_email = get_user_email_from_token(request)
+    if not current_email:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    client = clickhouse_connect.get_client(
+        host="clickhouse",
+        port=8123,
+        database="bionicpro"
+    )
+
+    result = client.query("""
         SELECT
-            user_email,
-            user_name,
-            total_sessions,
-            total_gestures,
-            avg_confidence,
-            avg_battery,
-            first_activity,
-            last_activity,
-            updated_at
+            user_email, user_name, total_sessions,
+            total_gestures, avg_confidence, avg_battery
         FROM reports_datamart
         WHERE user_email = %(email)s
-        LIMIT 1
-    """
+    """, parameters={"email": current_email})
 
-    try:
-        result = db.query(query, parameters={"email": user_email})
+    if not result.result_rows:
+        raise HTTPException(status_code=404, detail="Report not found")
 
-        if not result.result_rows:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Отчёт для пользователя {user_email} не найден"
-            )
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Email", "Name", "Sessions", "Gestures", "Accuracy%", "Battery%"])
+    writer.writerow(result.result_rows[0])
 
-        output = StringIO()
-        writer = csv.writer(output)
-
-        writer.writerow([
-            "Email пользователя", "Имя пользователя", "Всего сессий",
-            "Всего жестов", "Средняя точность", "Средний заряд батареи",
-            "Первая активность", "Последняя активность", "Дата обновления"
-        ])
-
-        # Данные
-        row = result.result_rows[0]
-        writer.writerow(row)
-
-        return Response(
-            content=output.getvalue().encode("utf-8"),
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=report_{user_email}.csv"}
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/health")
-async def health_check():
-    """Проверка работоспособности сервиса"""
-    return {"status": "ok"}
+    return Response(
+        content=output.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=report_{current_email}.csv"}
+    )
