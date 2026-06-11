@@ -1,6 +1,10 @@
 {
   "realm": "reports-realm",
   "enabled": true,
+
+  "accessTokenLifespan": 120,
+  "refreshTokenLifespan": 7200,
+
   "roles": {
     "realm": [
       {
@@ -17,6 +21,7 @@
       }
     ]
   },
+
   "users": [
     {
       "username": "user1",
@@ -109,6 +114,7 @@
       "realmRoles": ["prothetic_user"]
     }
   ],
+
   "clients": [
     {
       "clientId": "reports-frontend",
@@ -120,9 +126,12 @@
       "attributes": {
         "pkce.code.challenge.method": "S256"
       },
-      "redirectUris": ["http://localhost:3000/*"],
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:3000/callback"
+      ],
       "webOrigins": ["http://localhost:3000"],
-      "directAccessGrantsEnabled": true
+      "directAccessGrantsEnabled": false
     },
     {
       "clientId": "reports-api",
@@ -131,5 +140,92 @@
       "secret": "oNwoLQdvJAvRcL89SydqCWCe5ry1jMgq",
       "bearerOnly": true
     }
-  ]
+  ],
+
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "id": "ldap-provider-eu",
+        "name": "ldap-eu",
+        "providerId": "ldap",
+        "providerType": "org.keycloak.storage.UserStorageProvider",
+        "parentId": "reports-realm",
+        "config": {
+          "priority": ["0"],
+          "enabled": ["true"],
+          "importEnabled": ["true"],
+          "syncRegistrations": ["false"],
+          "editMode": ["READ_ONLY"],
+          "vendor": ["other"],
+          "usernameLDAPAttribute": ["uid"],
+          "rdnLDAPAttribute": ["uid"],
+          "uuidLDAPAttribute": ["entryUUID"],
+          "userObjectClasses": ["inetOrgPerson, organizationalPerson"],
+          "connectionUrl": ["ldap://openldap:389"],
+          "usersDn": ["ou=users,dc=bionicpro,dc=eu"],
+          "authType": ["simple"],
+          "bindDn": ["cn=admin,dc=bionicpro,dc=eu"],
+          "bindCredential": ["admin123"],
+          "searchScope": ["1"],
+          "useTruststoreSpi": ["ldapsOnly"],
+          "connectionPooling": ["true"],
+          "cachePolicy": ["DEFAULT"]
+        }
+      }
+    ],
+    "org.keycloak.storage.UserStorageProvider.mapper": [
+      {
+        "id": "ldap-email-mapper-eu",
+        "name": "email-mapper-eu",
+        "providerId": "user-attribute-ldap-mapper",
+        "providerType": "org.keycloak.storage.UserStorageProvider.mapper",
+        "parentId": "ldap-provider-eu",
+        "config": {
+          "ldapAttribute": ["mail"],
+          "userModelAttribute": ["email"]
+        }
+      },
+      {
+        "id": "ldap-firstname-mapper-eu",
+        "name": "firstname-mapper-eu",
+        "providerId": "user-attribute-ldap-mapper",
+        "providerType": "org.keycloak.storage.UserStorageProvider.mapper",
+        "parentId": "ldap-provider-eu",
+        "config": {
+          "ldapAttribute": ["cn"],
+          "userModelAttribute": ["firstName"]
+        }
+      },
+      {
+        "id": "ldap-lastname-mapper-eu",
+        "name": "lastname-mapper-eu",
+        "providerId": "user-attribute-ldap-mapper",
+        "providerType": "org.keycloak.storage.UserStorageProvider.mapper",
+        "parentId": "ldap-provider-eu",
+        "config": {
+          "ldapAttribute": ["sn"],
+          "userModelAttribute": ["lastName"]
+        }
+      },
+      {
+        "id": "ldap-role-mapper-eu",
+        "name": "role-mapper-eu",
+        "providerId": "role-ldap-mapper",
+        "providerType": "org.keycloak.storage.UserStorageProvider.mapper",
+        "parentId": "ldap-provider-eu",
+        "config": {
+          "rolesDn": ["ou=groups,dc=bionicpro,dc=eu"],
+          "roleNameLdapAttribute": ["cn"],
+          "roleObjectClasses": ["groupOfNames"],
+          "membershipLdapAttribute": ["member"],
+          "membershipUserLdapAttribute": ["uid"],
+          "membershipUserDn": ["ou=users,dc=bionicpro,dc=eu"],
+          "mode": ["IMPORT"],
+          "userRolesRetrieveStrategy": ["LOAD_GROUPS_BY_MEMBER_ATTRIBUTE"],
+          "memberofLdapAttribute": ["memberOf"],
+          "useRealmRolesMapping": ["true"]
+        }
+      }
+    ]
+  }
 }

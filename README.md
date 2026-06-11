@@ -5,3 +5,5 @@
 [1](keycloak/realm-export.json) [2](docker-compose.yaml) [3](frontend/src/App.tsx)
 ## Задача 3. Обеспечьте безопасное получение и хранение access-и refresh-токенов.
 [bionicpro-auth](bionicpro-auth)
+## Задача 4. Добавьте LDAP для возможности получения данных о пользователях представительства BionicPRO в другой стране.
+[ldap](ldap)

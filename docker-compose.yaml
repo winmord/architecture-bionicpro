@@ -11,6 +11,28 @@ services:
       - ./postgres-keycloak-data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: openldap
+    environment:
+      LDAP_ORGANISATION: "BionicPRO EU"
+      LDAP_DOMAIN: "bionicpro.eu"
+      LDAP_ADMIN_PASSWORD: "admin123"
+      LDAP_CONFIG_PASSWORD: "admin123"
+      LDAP_BASE_DN: "dc=bionicpro,dc=eu"
+    volumes:
+      - ./ldap/ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
+    ports:
+      - "389:389"
+      - "636:636"
+    command: --copy-service
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost -b dc=bionicpro,dc=eu -D cn=admin,dc=bionicpro,dc=eu -w admin123 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   keycloak:
     image: quay.io/keycloak/keycloak:21.1
     environment:
@@ -20,6 +42,7 @@ services:
       KC_DB_URL: jdbc:postgresql://keycloak_db:5432/keycloak_db
       KC_DB_USERNAME: keycloak_user
       KC_DB_PASSWORD: keycloak_password
+      KC_HOSTNAME: localhost
     command:
       - start-dev
       - --import-realm
@@ -30,6 +53,7 @@ services:
       - "8080:8080"
     depends_on:
       - keycloak_db
+      - openldap
   bionicpro-auth:
     build:
       context: ./bionicpro-auth
@@ -44,6 +68,7 @@ services:
       - "8081:8081"
     depends_on:
       - keycloak
+
   frontend:
     build:
       context: ./frontend
@@ -53,8 +78,5 @@ services:
     environment:
       REACT_APP_API_URL: http://localhost:8000
       REACT_APP_AUTH_URL: http://localhost:8081
-      REACT_APP_KEYCLOAK_URL: http://localhost:8080
-      REACT_APP_KEYCLOAK_REALM: reports-realm
-      REACT_APP_KEYCLOAK_CLIENT_ID: reports-frontend
     depends_on:
       - bionicpro-auth
