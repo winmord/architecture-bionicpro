@@ -7,3 +7,5 @@
 [bionicpro-auth](bionicpro-auth)
 ## Задача 4. Добавьте LDAP для возможности получения данных о пользователях представительства BionicPRO в другой стране.
 [ldap](ldap)
+## Задача 5. Настройте MFA.
+[realm-export](keycloak/realm-export.json)

@@ -27,11 +27,6 @@ services:
       - "389:389"
       - "636:636"
     command: --copy-service
-    healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost -b dc=bionicpro,dc=eu -D cn=admin,dc=bionicpro,dc=eu -w admin123 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   keycloak:
     image: quay.io/keycloak/keycloak:21.1
@@ -43,6 +38,7 @@ services:
       KC_DB_USERNAME: keycloak_user
       KC_DB_PASSWORD: keycloak_password
       KC_HOSTNAME: localhost
+      KC_FEATURES: "token-exchange,admin-fine-grained-authz,authorization"
     command:
       - start-dev
       - --import-realm
