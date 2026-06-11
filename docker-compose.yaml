@@ -30,6 +30,20 @@ services:
       - "8080:8080"
     depends_on:
       - keycloak_db
+  bionicpro-auth:
+    build:
+      context: ./bionicpro-auth
+      dockerfile: Dockerfile
+    environment:
+      KEYCLOAK_AUTH_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: reports-realm
+      KEYCLOAK_CLIENT_ID: reports-frontend
+      ACCESS_TOKEN_TTL: 120
+      SESSION_TTL: 7200
+    ports:
+      - "8081:8081"
+    depends_on:
+      - keycloak
   frontend:
     build:
       context: ./frontend
@@ -38,6 +52,9 @@ services:
       - "3000:3000"
     environment:
       REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_AUTH_URL: http://localhost:8081
       REACT_APP_KEYCLOAK_URL: http://localhost:8080
       REACT_APP_KEYCLOAK_REALM: reports-realm
       REACT_APP_KEYCLOAK_CLIENT_ID: reports-frontend
+    depends_on:
+      - bionicpro-auth
