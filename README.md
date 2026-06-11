@@ -26,3 +26,6 @@
 
 # Задание 3
 [bionicpro-reports](bionicpro-reports)
+
+# Задание 4. Повышение оперативности и стабильности работы CRM
+[register-debezium](register-debezium.sh) [clickhouse_setup](clickhouse_setup.sql)

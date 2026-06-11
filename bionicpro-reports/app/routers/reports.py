@@ -138,35 +138,29 @@ async def get_report(user_email: str, request: Request):
     if current_email.lower() != user_email.lower():
         raise HTTPException(status_code=403, detail="Access denied")
 
-    existing_key = check_report_in_s3(user_email)
-    if existing_key:
-        cdn_url = f"{CDN_BASE_URL}/{existing_key}"
-        return {
-            "status": "cached",
-            "report_url": cdn_url,
-            "message": "Report available via CDN"
-        }
+    client = clickhouse_connect.get_client(
+        host=os.getenv("CLICKHOUSE_HOST", "clickhouse"),
+        port=8123,
+        database="bionicpro"
+    )
 
-    report_data = get_report_from_clickhouse(user_email)
-    if not report_data:
-        return {
-            "email": user_email,
-            "name": "-",
-            "sessions": 0,
-            "gestures": 0,
-            "accuracy": 0,
-            "battery": 0,
-            "message": "No data yet"
-        }
+    result = client.query("""
+        SELECT user_email, user_name, total_sessions, total_gestures, avg_confidence, avg_battery
+        FROM reports_datamart
+        WHERE user_email = %(email)s
+    """, parameters={"email": user_email})
 
-    csv_content = generate_report_file(user_email, report_data)
-    file_key = save_report_to_s3(user_email, csv_content)
+    if not result.result_rows:
+        return {"email": user_email, "name": "-", "sessions": 0, "gestures": 0, "accuracy": 0, "battery": 0}
 
-    cdn_url = f"{CDN_BASE_URL}/{file_key}"
+    row = result.result_rows[0]
     return {
-        "status": "generated",
-        "report_url": cdn_url,
-        "message": "Report generated and cached"
+        "email": row[0],
+        "name": row[1] or "-",
+        "sessions": row[2],
+        "gestures": row[3],
+        "accuracy": round(row[4], 1),
+        "battery": round(row[5], 1)
     }
 
 
