@@ -11,6 +11,8 @@ services:
       - ./postgres-keycloak-data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    networks:
+      - bionicpro-net
 
   openldap:
     image: osixia/openldap:1.5.0
@@ -27,6 +29,8 @@ services:
       - "389:389"
       - "636:636"
     command: --copy-service
+    networks:
+      - bionicpro-net
 
   keycloak:
     image: quay.io/keycloak/keycloak:21.1
@@ -52,6 +56,8 @@ services:
     depends_on:
       - keycloak_db
       - openldap
+    networks:
+      - bionicpro-net
 
   bionicpro-auth:
     build:
@@ -67,6 +73,8 @@ services:
       - "8081:8081"
     depends_on:
       - keycloak
+    networks:
+      - bionicpro-net
 
   frontend:
     build:
@@ -82,3 +90,91 @@ services:
       REACT_APP_KEYCLOAK_CLIENT_ID: reports-frontend
     depends_on:
       - bionicpro-auth
+    networks:
+      - bionicpro-net
+
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: bionicpro
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres_data:/var/lib/postgresql/data
+    networks:
+      - bionicpro-net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./clickhouse_data:/var/lib/clickhouse
+    networks:
+      - bionicpro-net
+  airflow_db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - ./airflow_db_data:/var/lib/postgresql/data
+    networks:
+      - bionicpro-net
+  airflow_webserver:
+    image: apache/airflow:2.7.0
+    command: webserver
+    ports:
+      - "8082:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+      AIRFLOW__WEBSERVER__RBAC: "True"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      PG_HOST: postgres
+      PG_DB: bionicpro
+      PG_USER: postgres
+      PG_PASS: password
+      CH_HOST: clickhouse
+      CH_DB: bionicpro
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+    depends_on:
+      - airflow_db
+      - postgres
+      - clickhouse
+    networks:
+      - bionicpro-net
+
+  airflow_scheduler:
+    image: apache/airflow:2.7.0
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      PG_HOST: postgres
+      PG_DB: bionicpro
+      PG_USER: postgres
+      PG_PASS: password
+      CH_HOST: clickhouse
+      CH_DB: bionicpro
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+    depends_on:
+      - airflow_db
+      - postgres
+      - clickhouse
+    networks:
+      - bionicpro-net
+
+networks:
+  bionicpro-net:
+    driver: bridge
