@@ -17,3 +17,5 @@
 [Диаграмма C4](BionicPRO_C4_model_airflow.drawio.xml)
 ### Задача 2. Разработать Airflow DAG и настроить его на запуск по расписанию.
 [airflow](airflow)
+### Задача 3. Создайте бэкенд-часть приложения для API.
+[bionicpro-reports](bionicpro-reports)
