@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import reports
+import os
 
 app = FastAPI(
     title="BionicPRO Reports API",
@@ -8,12 +9,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Настройка CORS с поддержкой кастомных заголовков
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://localhost:3000"],  # Конкретный origin вместо "*"
+    allow_credentials=True,  # Важно для cookies
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-Session-Id"],  # Разрешаем кастомный заголовок
 )
 
 app.include_router(reports.router)
@@ -25,9 +27,20 @@ async def root():
         "service": "BionicPRO Reports API",
         "version": "1.0.0",
         "endpoints": {
-            "reports": "/reports/{user_email}",
-            "all_reports": "/reports/",
-            "csv": "/reports/{user_email}/csv",
-            "health": "/reports/health"
+            "reports": "/reports/{user_id}",
+            "csv": "/reports/me/csv",
+            "health": "/reports/health",
+            "debug_session": "/reports/debug/session"
         }
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="debug"
+    )

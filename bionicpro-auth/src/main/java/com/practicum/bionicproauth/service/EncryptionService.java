@@ -5,6 +5,9 @@ import org.springframework.stereotype.Service;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Arrays;
 import java.util.Base64;
 
 @Service
@@ -14,7 +17,13 @@ public class EncryptionService {
     private String encryptionKey;
 
     private SecretKey getKey() {
-        return new SecretKeySpec(encryptionKey.getBytes(), "AES");
+        try {
+            MessageDigest sha = MessageDigest.getInstance("SHA-256");
+            byte[] keyBytes = sha.digest(encryptionKey.getBytes(StandardCharsets.UTF_8));
+            return new SecretKeySpec(Arrays.copyOf(keyBytes, 32), "AES");
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage());
+        }
     }
 
     public String encrypt(String data) throws Exception {

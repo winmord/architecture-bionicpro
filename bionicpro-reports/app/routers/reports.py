@@ -9,6 +9,8 @@ from datetime import date
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
+import httpx
+import asyncio
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -17,6 +19,7 @@ S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin123")
 S3_BUCKET = os.getenv("S3_BUCKET", "bionicpro-reports")
 CDN_BASE_URL = os.getenv("CDN_BASE_URL", "http://localhost:8083/reports")
+AUTH_URL = os.getenv("AUTH_URL", "http://localhost:8081")
 
 s3_client = boto3.client(
     "s3",
@@ -33,18 +36,41 @@ except:
     pass
 
 
-def get_user_email_from_token(request: Request):
+async def get_user_id_from_session(request: Request):
+    session_id = request.cookies.get("SESSION_ID")
+
+    if not session_id:
+        session_id = request.headers.get("X-Session-Id")
+        if session_id:
+            print(f"DEBUG: Got session from X-Session-Id header: {session_id[:20]}...")
+
+    if not session_id:
+        print("DEBUG: No SESSION_ID found in cookies or X-Session-Id header")
+        return None
+
     try:
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return None
-        token = auth_header.replace("Bearer ", "")
-        payload = token.split('.')[1]
-        payload += '=' * (4 - len(payload) % 4)
-        decoded = base64.b64decode(payload)
-        data = json.loads(decoded)
-        return data.get("email")
-    except Exception:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{AUTH_URL}/auth/check",
+                cookies={"SESSION_ID": session_id}
+            )
+
+            print(f"DEBUG: Auth check response status: {response.status_code}")
+
+            if response.status_code == 200:
+                data = response.json()
+                user_id = data.get("userId")
+                print(f"DEBUG: Got user_id from session: {user_id}")
+                return user_id
+            else:
+                print(f"DEBUG: Auth check failed with status {response.status_code}")
+                return None
+
+    except httpx.TimeoutException:
+        print("DEBUG: Timeout connecting to auth server")
+        return None
+    except Exception as e:
+        print(f"DEBUG: Session check error: {str(e)}")
         return None
 
 
@@ -97,97 +123,126 @@ def check_report_in_s3(user_email: str) -> str or None:
 
 
 def get_report_from_clickhouse(user_email: str):
-    """Получает данные из ClickHouse"""
-    client = clickhouse_connect.get_client(
-        host=os.getenv("CLICKHOUSE_HOST", "clickhouse"),
-        port=8123,
-        database="bionicpro"
-    )
+    try:
+        client = clickhouse_connect.get_client(
+            host=os.getenv("CLICKHOUSE_HOST", "clickhouse"),
+            port=8123,
+            database="bionicpro"
+        )
 
-    result = client.query("""
-        SELECT
-            user_email,
-            user_name,
-            total_sessions,
-            total_gestures,
-            avg_confidence,
-            avg_battery
-        FROM reports_datamart
-        WHERE user_email = %(email)s
-    """, parameters={"email": user_email})
+        result = client.query("""
+            SELECT
+                user_email,
+                user_name,
+                total_sessions,
+                total_gestures,
+                avg_confidence,
+                avg_battery
+            FROM reports_datamart
+            WHERE user_email = %(email)s OR user_id = %(email)s
+        """, parameters={"email": user_email})
 
-    if not result.result_rows:
+        if not result.result_rows:
+            return None
+
+        row = result.result_rows[0]
+        return {
+            "email": row[0],
+            "name": row[1] or "-",
+            "sessions": row[2],
+            "gestures": row[3],
+            "accuracy": round(row[4], 1) if row[4] else 0,
+            "battery": round(row[5], 1) if row[5] else 0
+        }
+    except Exception as e:
+        print(f"ERROR: ClickHouse query failed: {str(e)}")
         return None
 
-    row = result.result_rows[0]
-    return {
-        "email": row[0],
-        "name": row[1] or "-",
-        "sessions": row[2],
-        "gestures": row[3],
-        "accuracy": round(row[4], 1),
-        "battery": round(row[5], 1)
-    }
 
+@router.get("/{user_id}")
+async def get_report(user_id: str, request: Request):
+    current_user_id = await get_user_id_from_session(request)
 
-@router.get("/{user_email}")
-async def get_report(user_email: str, request: Request):
-    current_email = get_user_email_from_token(request)
-    if not current_email:
+    if not current_user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    if current_email.lower() != user_email.lower():
+
+    if current_user_id != user_id:
+        print(f"DEBUG: Access denied - current_user_id={current_user_id}, requested={user_id}")
         raise HTTPException(status_code=403, detail="Access denied")
 
-    client = clickhouse_connect.get_client(
-        host=os.getenv("CLICKHOUSE_HOST", "clickhouse"),
-        port=8123,
-        database="bionicpro"
-    )
+    print(f"DEBUG: Access granted for user {user_id}")
 
-    result = client.query("""
-        SELECT user_email, user_name, total_sessions, total_gestures, avg_confidence, avg_battery
-        FROM reports_datamart
-        WHERE user_email = %(email)s
-    """, parameters={"email": user_email})
+    report_data = get_report_from_clickhouse(user_id)
 
-    if not result.result_rows:
-        return {"email": user_email, "name": "-", "sessions": 0, "gestures": 0, "accuracy": 0, "battery": 0}
+    if not report_data:
+        print(f"DEBUG: User {user_id} not found in ClickHouse, returning empty data")
+        return {
+            "email": user_id,
+            "name": "-",
+            "sessions": 0,
+            "gestures": 0,
+            "accuracy": 0,
+            "battery": 0
+        }
 
-    row = result.result_rows[0]
-    return {
-        "email": row[0],
-        "name": row[1] or "-",
-        "sessions": row[2],
-        "gestures": row[3],
-        "accuracy": round(row[4], 1),
-        "battery": round(row[5], 1)
-    }
+    return report_data
 
 
 @router.get("/me/csv")
 async def download_csv(request: Request):
+
     from fastapi.responses import RedirectResponse
 
-    current_email = get_user_email_from_token(request)
-    if not current_email:
+    current_user_id = await get_user_id_from_session(request)
+
+    if not current_user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    existing_key = check_report_in_s3(current_email)
+    print(f"DEBUG: Downloading CSV for user {current_user_id}")
+
+    existing_key = check_report_in_s3(current_user_id)
     if existing_key:
         cdn_url = f"{CDN_BASE_URL}/{existing_key}"
+        print(f"DEBUG: Using existing report from S3: {cdn_url}")
         return RedirectResponse(url=cdn_url)
 
-    report_data = get_report_from_clickhouse(current_email)
+    report_data = get_report_from_clickhouse(current_user_id)
     if not report_data:
-        raise HTTPException(status_code=404, detail="Report not found")
+        print(f"DEBUG: No report data found for {current_user_id}")
+        report_data = {
+            "email": current_user_id,
+            "name": "-",
+            "sessions": 0,
+            "gestures": 0,
+            "accuracy": 0,
+            "battery": 0
+        }
 
-    csv_content = generate_report_file(current_email, report_data)
-    file_key = save_report_to_s3(current_email, csv_content)
+    csv_content = generate_report_file(current_user_id, report_data)
+    file_key = save_report_to_s3(current_user_id, csv_content)
     cdn_url = f"{CDN_BASE_URL}/{file_key}"
 
+    print(f"DEBUG: Generated new report, saved to {cdn_url}")
     return RedirectResponse(url=cdn_url)
 
 
 @router.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@router.get("/debug/session")
+async def debug_session(request: Request):
+    session_cookie = request.cookies.get("SESSION_ID")
+    session_header = request.headers.get("X-Session-Id")
+
+    user_id = await get_user_id_from_session(request)
+
+    return {
+        "has_session_cookie": session_cookie is not None,
+        "session_cookie_preview": session_cookie[:20] + "..." if session_cookie else None,
+        "has_session_header": session_header is not None,
+        "session_header_preview": session_header[:20] + "..." if session_header else None,
+        "authenticated": user_id is not None,
+        "user_id": user_id
+    }

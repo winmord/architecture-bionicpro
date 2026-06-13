@@ -29,6 +29,7 @@ services:
       - "389:389"
       - "636:636"
     command: --copy-service
+    restart: unless-stopped
     networks:
       - bionicpro-net
 
@@ -199,6 +200,7 @@ services:
       S3_SECRET_KEY: minioadmin123
       S3_BUCKET: bionicpro-reports
       CDN_BASE_URL: http://localhost:8083/reports
+      AUTH_URL: http://bionicpro-auth:8081
     ports:
       - "8000:8000"
     depends_on:

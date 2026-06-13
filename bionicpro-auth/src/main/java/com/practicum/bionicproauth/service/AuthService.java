@@ -24,7 +24,7 @@ public class AuthService {
     @Value("${security.session-ttl}")
     private long sessionTtl;
 
-    public String createSession(String code, String codeVerifier) throws Exception {
+    public SessionResult createSession(String code, String codeVerifier) throws Exception {
         Map<String, Object> tokens = tokenService.exchangeCodeForTokens(code, codeVerifier);
 
         String accessToken = (String) tokens.get("access_token");
@@ -42,7 +42,7 @@ public class AuthService {
 
         scheduleSessionRemoval(sessionId, sessionTtl);
 
-        return sessionId;
+        return new SessionResult(sessionId, userId);  // Возвращаем оба значения
     }
 
     public SessionData getSession(String sessionId) {
@@ -113,5 +113,18 @@ public class AuthService {
                 Thread.currentThread().interrupt();
             }
         }).start();
+    }
+
+    public static class SessionResult {
+        private final String sessionId;
+        private final String userId;
+
+        public SessionResult(String sessionId, String userId) {
+            this.sessionId = sessionId;
+            this.userId = userId;
+        }
+
+        public String getSessionId() { return sessionId; }
+        public String getUserId() { return userId; }
     }
 }
