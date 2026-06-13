@@ -11,6 +11,28 @@ services:
       - ./postgres-keycloak-data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    networks:
+      - bionicpro-net
+
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: openldap
+    environment:
+      LDAP_ORGANISATION: "BionicPRO EU"
+      LDAP_DOMAIN: "bionicpro.eu"
+      LDAP_ADMIN_PASSWORD: "admin123"
+      LDAP_CONFIG_PASSWORD: "admin123"
+      LDAP_BASE_DN: "dc=bionicpro,dc=eu"
+    volumes:
+      - ./ldap/ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom
+    ports:
+      - "389:389"
+      - "636:636"
+    command: --copy-service
+    restart: unless-stopped
+    networks:
+      - bionicpro-net
+
   keycloak:
     image: quay.io/keycloak/keycloak:21.1
     environment:
@@ -20,7 +42,11 @@ services:
       KC_DB_URL: jdbc:postgresql://keycloak_db:5432/keycloak_db
       KC_DB_USERNAME: keycloak_user
       KC_DB_PASSWORD: keycloak_password
-    command: 
+      KC_HOSTNAME: localhost
+      KC_FEATURES: "token-exchange,admin-fine-grained-authz,authorization"
+      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID}
+      YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET}
+    command:
       - start-dev
       - --import-realm
     volumes:
@@ -29,6 +55,27 @@ services:
       - "8080:8080"
     depends_on:
       - keycloak_db
+      - openldap
+    networks:
+      - bionicpro-net
+
+  bionicpro-auth:
+    build:
+      context: ./bionicpro-auth
+      dockerfile: Dockerfile
+    environment:
+      KEYCLOAK_AUTH_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: reports-realm
+      KEYCLOAK_CLIENT_ID: reports-frontend
+      ACCESS_TOKEN_TTL: 120
+      SESSION_TTL: 7200
+    ports:
+      - "8081:8081"
+    depends_on:
+      - keycloak
+    networks:
+      - bionicpro-net
+
   frontend:
     build:
       context: ./frontend
@@ -37,6 +84,199 @@ services:
       - "3000:3000"
     environment:
       REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_AUTH_URL: http://localhost:8081
       REACT_APP_KEYCLOAK_URL: http://localhost:8080
       REACT_APP_KEYCLOAK_REALM: reports-realm
       REACT_APP_KEYCLOAK_CLIENT_ID: reports-frontend
+    depends_on:
+      - bionicpro-auth
+    networks:
+      - bionicpro-net
+
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: bionicpro
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    command: >
+      postgres -c wal_level=logical
+               -c max_replication_slots=10
+               -c max_wal_senders=10
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres_data:/var/lib/postgresql/data
+    networks:
+      - bionicpro-net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    ports:
+      - "8123:8123"
+      - "19000:9000"
+    volumes:
+      - ./clickhouse_data:/var/lib/clickhouse
+    networks:
+      - bionicpro-net
+  airflow_db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - ./airflow_db_data:/var/lib/postgresql/data
+    networks:
+      - bionicpro-net
+  airflow_webserver:
+    image: apache/airflow:2.7.0
+    command: webserver
+    ports:
+      - "8082:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+      AIRFLOW__WEBSERVER__RBAC: "True"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      PG_HOST: postgres
+      PG_DB: bionicpro
+      PG_USER: postgres
+      PG_PASS: password
+      CH_HOST: clickhouse
+      CH_DB: bionicpro
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+    depends_on:
+      - airflow_db
+      - postgres
+      - clickhouse
+    networks:
+      - bionicpro-net
+  airflow_init:
+    image: apache/airflow:2.7.0
+    command: db init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+    depends_on:
+      - airflow_db
+    networks:
+      - bionicpro-net
+    restart: "no"
+  airflow_scheduler:
+    image: apache/airflow:2.7.0
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      PG_HOST: postgres
+      PG_DB: bionicpro
+      PG_USER: postgres
+      PG_PASS: password
+      CH_HOST: clickhouse
+      CH_DB: bionicpro
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+    depends_on:
+      - airflow_db
+      - postgres
+      - clickhouse
+    networks:
+      - bionicpro-net
+
+  reports-api:
+    build:
+      context: ./bionicpro-reports
+      dockerfile: Dockerfile
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin123
+      S3_BUCKET: bionicpro-reports
+      CDN_BASE_URL: http://localhost:8083/reports
+      AUTH_URL: http://bionicpro-auth:8081
+    ports:
+      - "8000:8000"
+    depends_on:
+      - clickhouse
+      - minio
+      - nginx-cdn
+    networks:
+      - bionicpro-net
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./minio_data:/data
+    networks:
+      - bionicpro-net
+
+  nginx-cdn:
+    image: nginx:alpine
+    ports:
+      - "8083:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/cache:/var/cache/nginx
+    depends_on:
+      - minio
+    networks:
+      - bionicpro-net
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - bionicpro-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - bionicpro-net
+
+  kafka-connect:
+    image: debezium/connect:2.5.0.Final
+    depends_on:
+      - kafka
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+    ports:
+      - "8084:8083"
+    networks:
+      - bionicpro-net
+
+networks:
+  bionicpro-net:
+    driver: bridge

@@ -1,0 +1,22 @@
+dn: dc=bionicpro,dc=eu
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: BionicPRO EU
+dc: bionicpro
+
+dn: cn=admin,dc=bionicpro,dc=eu
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: admin
+userPassword: admin123
+
+dn: ou=users,dc=bionicpro,dc=eu
+objectClass: organizationalUnit
+objectClass: top
+ou: users
+
+dn: ou=groups,dc=bionicpro,dc=eu
+objectClass: organizationalUnit
+objectClass: top
+ou: groups

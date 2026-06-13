@@ -1,0 +1,33 @@
+# Пользователи представительства EU
+dn: uid=johndoe,ou=users,dc=bionicpro,dc=eu
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: John Doe
+sn: Doe
+uid: johndoe
+mail: john.doe@bionicpro.eu
+userPassword: password123
+
+dn: uid=janedoe,ou=users,dc=bionicpro,dc=eu
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: Jane Doe
+sn: Doe
+uid: janedoe
+mail: jane.doe@bionicpro.eu
+userPassword: password123
+
+dn: uid=mike,ou=users,dc=bionicpro,dc=eu
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: Mike Smith
+sn: Smith
+uid: mikesmith
+mail: mike.smith@bionicpro.eu
+userPassword: password123
