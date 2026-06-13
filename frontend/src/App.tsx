@@ -51,7 +51,9 @@ const App: React.FC = () => {
       const encoder = new TextEncoder();
       const data = encoder.encode(plain);
       const hash = await crypto.subtle.digest('SHA-256', data);
-      return btoa(String.fromCharCode(...new Uint8Array(hash)))
+      const hashArray = Array.from(new Uint8Array(hash));
+
+      return btoa(String.fromCharCode.apply(null, hashArray))
           .replace(/\+/g, '-')
           .replace(/\//g, '_')
           .replace(/=+$/, '');
@@ -109,6 +111,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (window.location.pathname === '/callback') {
       handleCallback();
+    } else {
+      checkSession();
     }
   }, []);
 

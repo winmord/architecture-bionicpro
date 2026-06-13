@@ -48,7 +48,6 @@ services:
     command:
       - start-dev
       - --import-realm
-      - --features=oauth2-pkce
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
     ports:
@@ -115,7 +114,7 @@ services:
     image: clickhouse/clickhouse-server:23.8
     ports:
       - "8123:8123"
-      - "9000:9000"
+      - "19000:9000"
     volumes:
       - ./clickhouse_data:/var/lib/clickhouse
     networks:
@@ -155,7 +154,17 @@ services:
       - clickhouse
     networks:
       - bionicpro-net
-
+  airflow_init:
+    image: apache/airflow:2.7.0
+    command: db init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+    depends_on:
+      - airflow_db
+    networks:
+      - bionicpro-net
+    restart: "no"
   airflow_scheduler:
     image: apache/airflow:2.7.0
     command: scheduler
@@ -262,7 +271,7 @@ services:
       OFFSET_STORAGE_TOPIC: connect_offsets
       STATUS_STORAGE_TOPIC: connect_statuses
     ports:
-      - "8083:8083"
+      - "8084:8083"
     networks:
       - bionicpro-net
 
